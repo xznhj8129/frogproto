@@ -1,4 +1,5 @@
 from .msglib import (
+    ProtoRuntime,
     MessageCategory,
     Messages,
     PayloadEnum,
@@ -16,6 +17,7 @@ from .msglib import (
 )
 
 __all__ = [
+    "ProtoRuntime",
     "MessageCategory",
     "Messages",
     "PayloadEnum",
