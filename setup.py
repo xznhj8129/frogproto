@@ -21,7 +21,7 @@ setup(
     download_url="",
     include_package_data=True,
     keywords=["protocol", "msgpack"],
-    install_requires=["msgpack"],
+    install_requires=["msgpack", "pydantic"],
     package_data={"frogproto": ["protocol/*.json"]},
     classifiers=[
         "Development Status :: 4 - Beta",

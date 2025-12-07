@@ -1,6 +1,6 @@
 # frogproto
 
-Runtime message packing helpers built from a JSON protocol spec (`frogproto/protocol.json` template). Point to a protocol file, load it, and use the returned object.
+Runtime message packing helpers built from a JSON protocol spec (`frogproto/protocol.json` template). Point to a protocol file, load it, and use the returned object. Payloads are validated with Pydantic models generated straight from the schema at runtime; multiple protocols can coexist by creating multiple `Proto` instances.
 
 ```python
 from frogproto import load
