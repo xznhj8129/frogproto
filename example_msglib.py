@@ -1,18 +1,15 @@
 from pathlib import Path
 import frogproto.msglib as fp
 
-Proto = fp.ProtoRuntime
-Proto.load("protocol.json")
-Messages = Proto.Messages
-PayloadEnum = Proto.PayloadEnum
-
+# TODO: new usage
+Proto = fp.load("protocol.json")
 
 print("=== FLIGHT message ===")
 lat = 15.833455
 lon = 20.898841
-msg_instance = Messages.Status.System.FLIGHT(
+msg_instance = Proto.msg.Status.System.FLIGHT(
     airspeed=100,
-    FlightMode=PayloadEnum.FlightMode.LOITER,
+    FlightMode=Proto.enum.FlightMode.LOITER,
     groundspeed=100,
     heading=0,
     msl_alt=100,
@@ -34,7 +31,7 @@ print("Decoded msg str:", Proto.message_str_from_id(Proto.messageid(enum_member)
 print()
 
 print("=== TEXT message ===")
-msg_enum = Messages.Testing.System.TEXTMSG
+msg_enum = Proto.msg.Testing.System.TEXTMSG
 try:
     msg_enum(textdata=b"testing")
 except Exception as e:

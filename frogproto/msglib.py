@@ -25,17 +25,43 @@ class BinaryFlag(IntFlag):
     EXAMPLE_8 = 1 << 7
 
 
-class ProtoRuntime:
-    MessageCategory: Optional[IntEnum] = None
-    Messages: Optional[type] = None
-    PayloadEnum: Optional[type] = None
-    PROTOCOL_NAME: Optional[str] = None
-    PROTOCOL_VERSION: Optional[int] = None
+class MessageInstance:
+    __slots__ = ("proto", "enum_member", "payload_list", "payload_dict")
 
+    def __init__(self, proto, enum_member, payload_list, payload_dict):
+        self.proto = proto
+        self.enum_member = enum_member
+        self.payload_list = payload_list
+        self.payload_dict = payload_dict
+
+    def encode(self) -> bytes:
+        return self.proto.encode_message(self.enum_member, self.payload_list)
+
+    def as_object(self) -> Dict[str, Any]:
+        return {
+            "msgid": self.proto.message_str_from_id(self.proto.messageid(self.enum_member)),
+            "payload": self.payload_dict,
+        }
+
+    def dict(self) -> Dict[str, Any]:
+        return self.as_object()
+
+
+class Proto:
+    def __init__(self, name, version, message_category, messages, payload_enum, spec):
+        self.name = name
+        self.version = version
+        self.MessageCategory = message_category
+        self.Messages = messages
+        self.PayloadEnum = payload_enum
+        self.spec = spec
+        self.msg = messages
+        self.enum = payload_enum
+        self._attach_payload_helpers()
+
+    # ----- loading -----
     @classmethod
     def _load_spec(cls, source: Any) -> Dict[str, Any]:
-        if source is None:
-            raise RuntimeError("Protocol path or object must be provided")
         if isinstance(source, (str, Path)):
             path = Path(source)
             with path.open("r", encoding="utf-8") as f:
@@ -92,7 +118,7 @@ class ProtoRuntime:
         return IntEnum("MessageCategory", category_members), messages_cls
 
     @classmethod
-    def load(cls, source: Any) -> Dict[str, Any]:
+    def load(cls, source: Any) -> "Proto":
         spec = cls._load_spec(source)
         messages_spec = spec.get("messages")
         enum_spec = spec.get("enums", {})
@@ -100,28 +126,14 @@ class ProtoRuntime:
             raise ValueError("Protocol Error: 'messages' missing or invalid in protocol JSON")
         if not isinstance(enum_spec, dict):
             raise ValueError("Protocol Error: 'enums' must be a mapping")
-        cls.PayloadEnum = cls._build_payload_enum(enum_spec)
-        cls.MessageCategory, cls.Messages = cls._build_messages(messages_spec)
-        cls.PROTOCOL_NAME = spec.get("PROTOCOL_NAME")
-        cls.PROTOCOL_VERSION = spec.get("PROTOCOL_VERSION")
-        cls._attach_payload_helpers()
+        payload_enum = cls._build_payload_enum(enum_spec)
+        message_category, messages = cls._build_messages(messages_spec)
+        name = spec.get("PROTOCOL_NAME")
+        version = spec.get("PROTOCOL_VERSION")
+        return cls(name, version, message_category, messages, payload_enum, spec)
 
-        g = globals()
-        g["MessageCategory"] = cls.MessageCategory
-        g["Messages"] = cls.Messages
-        g["PayloadEnum"] = cls.PayloadEnum
-        g["PROTOCOL_NAME"] = cls.PROTOCOL_NAME
-        g["PROTOCOL_VERSION"] = cls.PROTOCOL_VERSION
-        return spec
-
-    @classmethod
-    def _require_loaded(cls):
-        if cls.MessageCategory is None or cls.Messages is None or cls.PayloadEnum is None:
-            raise RuntimeError("Protocol is not loaded")
-
-    @classmethod
-    def messageid(cls, msg):
-        cls._require_loaded()
+    # ----- helpers -----
+    def messageid(self, msg):
         try:
             category_value = msg.__class__.category_value
             subcategory_value = msg.__class__.value_subcat
@@ -130,23 +142,21 @@ class ProtoRuntime:
         message_value = msg.value
         return (category_value, subcategory_value, message_value)
 
-    @classmethod
-    def message_str_from_id(cls, msg_id):
-        cls._require_loaded()
+    def message_str_from_id(self, msg_id):
         category_value, subcategory_value, message_value = msg_id
         try:
-            category_enum = cls.MessageCategory(category_value)
+            category_enum = self.MessageCategory(category_value)
             category_name = category_enum.name
         except ValueError as e:
             raise ValueError(f"Protocol Error: Invalid category value: {category_value}") from e
 
-        category_class = getattr(cls.Messages, category_name)
+        category_class = getattr(self.Messages, category_name)
         subcategory_name = None
         for attr in dir(category_class):
-            if attr.startswith('_'):
+            if attr.startswith("_"):
                 continue
             subcategory_class = getattr(category_class, attr)
-            if hasattr(subcategory_class, 'value_subcat') and isinstance(subcategory_class.value_subcat, int):
+            if hasattr(subcategory_class, "value_subcat") and isinstance(subcategory_class.value_subcat, int):
                 if subcategory_class.value_subcat == subcategory_value:
                     subcategory_name = attr
                     break
@@ -164,21 +174,19 @@ class ProtoRuntime:
 
         return f"{category_name}.{subcategory_name}.{message_name}"
 
-    @classmethod
-    def get_message_enum(cls, category_value, subcategory_value, message_value):
-        cls._require_loaded()
+    def get_message_enum(self, category_value, subcategory_value, message_value):
         try:
-            category_enum = cls.MessageCategory(category_value)
+            category_enum = self.MessageCategory(category_value)
             category_name = category_enum.name
         except ValueError as e:
             raise ValueError(f"Protocol Error: Invalid category value: {category_value}") from e
 
-        category_class = getattr(cls.Messages, category_name)
+        category_class = getattr(self.Messages, category_name)
         for attr in dir(category_class):
-            if attr.startswith('_'):
+            if attr.startswith("_"):
                 continue
             subcategory_class = getattr(category_class, attr)
-            if hasattr(subcategory_class, 'value_subcat') and subcategory_class.value_subcat == subcategory_value:
+            if hasattr(subcategory_class, "value_subcat") and subcategory_class.value_subcat == subcategory_value:
                 break
         else:
             raise ValueError(f"Protocol Error: No subcategory found with value {subcategory_value} in category {category_name}")
@@ -190,10 +198,8 @@ class ProtoRuntime:
 
         return enum_member
 
-    @classmethod
-    def create_payload(cls, enum_member, **kwargs):
-        cls._require_loaded()
-        if not hasattr(enum_member, 'payload_def'):
+    def create_payload(self, enum_member, **kwargs):
+        if not hasattr(enum_member, "payload_def"):
             raise ValueError(f"Protocol Error: No payload definition for {enum_member}")
 
         field_defs = {}
@@ -220,7 +226,7 @@ class ProtoRuntime:
             field_info = field_defs[key]
 
             if field_info["is_enum"]:
-                enum_cls = getattr(cls.PayloadEnum, key, None)
+                enum_cls = getattr(self.PayloadEnum, key, None)
                 if enum_cls is None:
                     raise ValueError(f"Protocol Error: Enum class {key} not found in PayloadEnum")
                 if not isinstance(value, enum_cls):
@@ -236,18 +242,16 @@ class ProtoRuntime:
 
         return plist
 
-    @classmethod
-    def encode_message(cls, msg_enum, payload=[]):
-        cls._require_loaded()
-        category, subcategory, msgtype = cls.messageid(msg_enum)
+    def encode_message(self, msg_enum, payload=None):
+        if payload is None:
+            payload = []
+        category, subcategory, msgtype = self.messageid(msg_enum)
         return msgpack.packb([category, subcategory, msgtype, payload])
 
-    @classmethod
-    def decode_message(cls, data):
-        cls._require_loaded()
+    def decode_message(self, data):
         category, subcategory, msgtype, payload_list = msgpack.unpackb(data, use_list=True)
-        enum_member = cls.get_message_enum(category, subcategory, msgtype)
-        if not hasattr(enum_member, 'payload_def'):
+        enum_member = self.get_message_enum(category, subcategory, msgtype)
+        if not hasattr(enum_member, "payload_def"):
             raise ValueError(f"Protocol Error: No payload definition for {enum_member}")
 
         payload_def = enum_member.payload_def
@@ -260,113 +264,50 @@ class ProtoRuntime:
             key = field_name[len("PayloadEnum_"):] if field_name.startswith("PayloadEnum_") else field_name
             datatype = field.get("datatype")
             if datatype == "enum":
-                enum_cls = getattr(cls.PayloadEnum, key, None)
+                enum_cls = getattr(self.PayloadEnum, key, None)
                 if enum_cls is None:
                     raise ValueError(f"Protocol Error: Enum class {key} not found in PayloadEnum")
                 value = enum_cls(value)
             elif datatype == "string" and isinstance(value, (bytes, bytearray)):
-                value = value.decode('utf-8')
+                value = value.decode("utf-8")
 
             payload_dict[key] = value
 
         return enum_member, payload_dict
 
-    @classmethod
-    def _attach_payload_helpers(cls):
-        if cls.Messages is None:
-            return
-        for category_name in dir(cls.Messages):
-            if category_name.startswith('_'):
+    def _attach_payload_helpers(self):
+        for category_name in dir(self.Messages):
+            if category_name.startswith("_"):
                 continue
-            category = getattr(cls.Messages, category_name)
+            category = getattr(self.Messages, category_name)
             for subcategory_name in dir(category):
-                if subcategory_name.startswith('_'):
+                if subcategory_name.startswith("_"):
                     continue
                 subcategory = getattr(category, subcategory_name)
                 if isinstance(subcategory, type) and issubclass(subcategory, Enum):
-                    setattr(subcategory, 'payload', lambda self, **kwargs: cls.create_payload(self, **kwargs))
+                    def _payload(self_enum, **kwargs):
+                        return self.create_payload(self_enum, **kwargs)
 
-                    def _instance_builder(self, **kwargs):
-                        plist = cls.create_payload(self, **kwargs)
+                    def _instance_builder(self_enum, **kwargs):
+                        plist = self.create_payload(self_enum, **kwargs)
                         ordered = {}
-                        for field in self.payload_def:
+                        for field in self_enum.payload_def:
                             fname = field["name"]
                             key = fname[len("PayloadEnum_"):] if fname.startswith("PayloadEnum_") else fname
                             ordered[key] = kwargs[key]
-                        return MessageInstance(self, plist, ordered)
+                        return MessageInstance(self, self_enum, plist, ordered)
 
-                    setattr(subcategory, '__call__', _instance_builder)
-
-
-class MessageInstance:
-    __slots__ = ("enum_member", "payload_list", "payload_dict")
-
-    def __init__(self, enum_member, payload_list, payload_dict):
-        self.enum_member = enum_member
-        self.payload_list = payload_list
-        self.payload_dict = payload_dict
-
-    def encode(self) -> bytes:
-        return ProtoRuntime.encode_message(self.enum_member, self.payload_list)
-
-    def as_object(self) -> Dict[str, Any]:
-        return {
-            "msgid": ProtoRuntime.message_str_from_id(ProtoRuntime.messageid(self.enum_member)),
-            "payload": self.payload_dict
-        }
-
-    def dict(self) -> Dict[str, Any]:
-        return self.as_object()
+                    setattr(subcategory, "payload", _payload)
+                    setattr(subcategory, "__call__", _instance_builder)
 
 
-def load_protocol(source: Any):
-    return ProtoRuntime.load(source)
+def load(source: Any) -> Proto:
+    return Proto.load(source)
 
-
-def messageid(msg):
-    return ProtoRuntime.messageid(msg)
-
-
-def message_str_from_id(msg_id):
-    return ProtoRuntime.message_str_from_id(msg_id)
-
-
-def get_message_enum(category_value, subcategory_value, message_value):
-    return ProtoRuntime.get_message_enum(category_value, subcategory_value, message_value)
-
-
-def create_payload(enum_member, **kwargs):
-    return ProtoRuntime.create_payload(enum_member, **kwargs)
-
-
-def encode_message(msg_enum, payload=[]):
-    return ProtoRuntime.encode_message(msg_enum, payload)
-
-
-def decode_message(data):
-    return ProtoRuntime.decode_message(data)
-
-
-MessageCategory = None
-Messages = None
-PayloadEnum = None
-PROTOCOL_NAME = None
-PROTOCOL_VERSION = None
 
 __all__ = [
-    "ProtoRuntime",
-    "MessageCategory",
-    "Messages",
-    "PayloadEnum",
+    "Proto",
+    "load",
     "BinaryFlag",
-    "PROTOCOL_NAME",
-    "PROTOCOL_VERSION",
-    "messageid",
-    "message_str_from_id",
-    "get_message_enum",
-    "create_payload",
     "MessageInstance",
-    "encode_message",
-    "decode_message",
-    "load_protocol",
 ]

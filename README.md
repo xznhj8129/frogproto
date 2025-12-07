@@ -1,19 +1,15 @@
 # frogproto
 
-Runtime message packing helpers built from a JSON protocol spec (`frogproto/protocol/protocol.json` template). The first thing you do is point to a protocol file and load it.
+Runtime message packing helpers built from a JSON protocol spec (`frogproto/protocol.json` template). Point to a protocol file, load it, and use the returned object.
 
 ```python
-from frogproto import ProtoRuntime as Proto
+from frogproto import load
 
-# Use the template or your own JSON path
-Proto.load(Proto.TEMPLATE_PROTOCOL_PATH)
-Messages = Proto.Messages
-PayloadEnum = Proto.PayloadEnum
-
-msg = Messages.Testing.System.TEXTMSG(textdata="hi")
+proto = load("protocol.json")  # or your own path/dict
+msg = proto.msg.Testing.System.TEXTMSG(textdata="hi")
 encoded = msg.encode()
-enum_member, decoded = Proto.decode_message(encoded)
-print(Proto.message_str_from_id(Proto.messageid(enum_member)), decoded)
+enum_member, decoded = proto.decode_message(encoded)
+print(proto.message_str_from_id(proto.messageid(enum_member)), decoded)
 ```
 
 See `example_msglib.py` for full canonical usage.

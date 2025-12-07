@@ -1,35 +1,8 @@
-from .msglib import (
-    ProtoRuntime,
-    MessageCategory,
-    Messages,
-    PayloadEnum,
-    BinaryFlag,
-    PROTOCOL_NAME,
-    PROTOCOL_VERSION,
-    messageid,
-    message_str_from_id,
-    get_message_enum,
-    create_payload,
-    MessageInstance,
-    encode_message,
-    decode_message,
-    load_protocol,
-)
+from .msglib import Proto, load, BinaryFlag, MessageInstance
 
 __all__ = [
-    "ProtoRuntime",
-    "MessageCategory",
-    "Messages",
-    "PayloadEnum",
+    "Proto",
+    "load",
     "BinaryFlag",
-    "PROTOCOL_NAME",
-    "PROTOCOL_VERSION",
-    "messageid",
-    "message_str_from_id",
-    "get_message_enum",
-    "create_payload",
     "MessageInstance",
-    "encode_message",
-    "decode_message",
-    "load_protocol",
 ]
